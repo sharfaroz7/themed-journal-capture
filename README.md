@@ -43,7 +43,3 @@ right below the configured heading. If the heading doesn't exist yet in the targ
 - **Categories** — optional. Each category has a name and a list of vault file paths (one per line). Browsable from the capture window via ↑ → ←. Add/remove categories with the buttons in this settings tab; files listed under a category are created automatically (like the inbox note) if they don't already exist.
 
 Note: when at least one category is configured, the Up arrow in the capture window is repurposed to open the category browser instead of moving the text caret up a line. If you don't use categories, leave the list empty and Up arrow behaves as normal caret movement.
-
-## Before publishing / sharing
-
-`manifest.json` still has placeholder values for `author` and `authorUrl` — fill those in with your name/handle and GitHub URL before submitting to the community plugin directory or sharing the repo.
