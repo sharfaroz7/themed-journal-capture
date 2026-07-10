@@ -20,7 +20,6 @@
 
 .tjc-modal {
 	margin-top: max(env(safe-area-inset-top, 0px), 16px);
-	max-height: 88vh;
 	max-height: 88dvh;
 	display: flex;
 	flex-direction: column;
@@ -45,7 +44,6 @@
 	width: 100%;
 	flex: 1 1 auto;
 	min-height: 120px;
-	max-height: 45vh;
 	max-height: 45dvh;
 	resize: vertical;
 	font-size: 15px;
