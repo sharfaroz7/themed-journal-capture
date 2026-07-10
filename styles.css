@@ -14,8 +14,8 @@
  * gets covered. Anchoring the modal to the top instead means everything
  * below it (the keyboard included) has nowhere to encroach from.
  */
-.tjc-modal-container {
-	align-items: flex-start !important;
+.modal-container.tjc-modal-container {
+	align-items: flex-start;
 }
 
 .tjc-modal {
