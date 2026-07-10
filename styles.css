@@ -1,0 +1,144 @@
+/*
+ * .modal-content on iOS/Android otherwise keeps its full layout height even
+ * when the on-screen keyboard shrinks the visible viewport, which is what
+ * cuts the bottom of the modal off. Capping height with dvh (dynamic
+ * viewport height - accounts for the keyboard) and making everything a
+ * scrollable flex column keeps the whole modal, including the buttons,
+ * reachable no matter how much room the keyboard leaves.
+ */
+/*
+ * Obsidian centers modals vertically by default (.modal-container uses
+ * align-items: center). On mobile, centering means roughly the bottom half
+ * of the modal sits below the midpoint of the *full* screen - once the
+ * keyboard appears and eats the bottom portion, that half is exactly what
+ * gets covered. Anchoring the modal to the top instead means everything
+ * below it (the keyboard included) has nowhere to encroach from.
+ */
+.tjc-modal-container {
+	align-items: flex-start !important;
+}
+
+.tjc-modal {
+	margin-top: max(env(safe-area-inset-top, 0px), 16px);
+	max-height: 88vh;
+	max-height: 88dvh;
+	display: flex;
+	flex-direction: column;
+}
+
+.tjc-modal .modal-content {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.tjc-edit-container {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.tjc-capture-modal .tjc-textarea {
+	width: 100%;
+	flex: 1 1 auto;
+	min-height: 120px;
+	max-height: 45vh;
+	max-height: 45dvh;
+	resize: vertical;
+	font-size: 15px;
+	line-height: 1.5;
+	padding: 10px;
+	box-sizing: border-box;
+	font-family: var(--font-text, inherit);
+}
+
+.tjc-browse-container {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0;
+	outline: none;
+}
+
+.tjc-browse-title {
+	font-weight: 600;
+	margin-bottom: 8px;
+	flex: 0 0 auto;
+}
+
+.tjc-list {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+}
+
+.tjc-list-item {
+	padding: 12px 14px;
+	min-height: 44px;
+	display: flex;
+	align-items: center;
+	cursor: pointer;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tjc-list-item:last-child {
+	border-bottom: none;
+}
+
+.tjc-list-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.tjc-list-item.tjc-selected {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.tjc-capture-modal .tjc-hint {
+	margin-top: 8px;
+	font-size: 12px;
+	opacity: 0.6;
+	flex: 0 0 auto;
+}
+
+.tjc-capture-modal .tjc-btn-row {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	margin-top: 14px;
+	flex-wrap: wrap;
+	flex: 0 0 auto;
+}
+
+.tjc-capture-modal .tjc-btn {
+	min-height: 44px;
+	padding: 0 16px;
+	border-radius: 6px;
+}
+
+.tjc-capture-modal .tjc-btn-primary {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.tjc-capture-modal .tjc-btn-primary:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.tjc-category-block {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 8px 12px;
+	margin-bottom: 12px;
+}
+
+.tjc-category-files {
+	width: 100%;
+	font-family: var(--font-monospace, monospace);
+	font-size: 13px;
+}
