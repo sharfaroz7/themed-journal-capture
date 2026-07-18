@@ -222,7 +222,12 @@ class CaptureModal extends Modal {
 
 	renderCategoryList() {
 		this.browseContainer.empty();
-		this.browseContainer.createEl("div", { cls: "tjc-browse-title", text: "Choose a category" });
+
+		const header = this.browseContainer.createDiv({ cls: "tjc-browse-header" });
+		const backBtn = header.createEl("button", { cls: "tjc-btn tjc-back-btn", text: "← Back" });
+		backBtn.setAttribute("aria-label", "Back to writing");
+		backBtn.addEventListener("click", () => this.enterEditMode());
+		header.createEl("div", { cls: "tjc-browse-title", text: "Choose a category" });
 
 		const list = this.browseContainer.createDiv({ cls: "tjc-list" });
 		this.plugin.settings.categories.forEach((cat, idx) => {
@@ -242,7 +247,12 @@ class CaptureModal extends Modal {
 
 	renderFileList(cat) {
 		this.browseContainer.empty();
-		this.browseContainer.createEl("div", { cls: "tjc-browse-title", text: cat.name || "(untitled category)" });
+
+		const header = this.browseContainer.createDiv({ cls: "tjc-browse-header" });
+		const backBtn = header.createEl("button", { cls: "tjc-btn tjc-back-btn", text: "← Back" });
+		backBtn.setAttribute("aria-label", "Back to categories");
+		backBtn.addEventListener("click", () => this.enterCategoryMode());
+		header.createEl("div", { cls: "tjc-browse-title", text: cat.name || "(untitled category)" });
 
 		const files = cat.files || [];
 		if (!files.length) {

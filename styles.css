@@ -14,12 +14,13 @@
  * gets covered. Anchoring the modal to the top instead means everything
  * below it (the keyboard included) has nowhere to encroach from.
  */
-.modal-container.tjc-modal-container {
-	align-items: flex-start;
+.tjc-modal-container {
+	align-items: flex-start !important;
 }
 
 .tjc-modal {
 	margin-top: max(env(safe-area-inset-top, 0px), 16px);
+	max-height: 88vh;
 	max-height: 88dvh;
 	display: flex;
 	flex-direction: column;
@@ -44,6 +45,7 @@
 	width: 100%;
 	flex: 1 1 auto;
 	min-height: 120px;
+	max-height: 45vh;
 	max-height: 45dvh;
 	resize: vertical;
 	font-size: 15px;
@@ -61,10 +63,26 @@
 	outline: none;
 }
 
-.tjc-browse-title {
-	font-weight: 600;
+.tjc-browse-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	margin-bottom: 8px;
 	flex: 0 0 auto;
+}
+
+.tjc-browse-title {
+	font-weight: 600;
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tjc-back-btn {
+	flex: 0 0 auto;
+	white-space: nowrap;
 }
 
 .tjc-list {

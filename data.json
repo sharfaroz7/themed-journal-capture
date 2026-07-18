@@ -1,0 +1,116 @@
+{
+  "heading": "# Log",
+  "dateFormat": "date",
+  "inboxPath": "Funnel.md",
+  "categories": [
+    {
+      "name": "Home",
+      "files": [
+        "/Home.md",
+        "/Cleaning, Garbage and recycling.md",
+        "/Food Mx.md",
+        "/Sallapuramma Mx.md",
+        "/Nandi Pride Villa tenancy.md",
+        "/Electricity and Gas.md",
+        "/Furnishing.md",
+        "/Home security.md",
+        "/Home storage.md",
+        "/Home temperature Mx.md",
+        "/Home upgrades.md",
+        "/Lighting Mx.md",
+        "/Hosting.md",
+        "/Internet Mx.md",
+        "/Laundry Mx.md",
+        "/Water Mx.md"
+      ]
+    },
+    {
+      "name": "Personal",
+      "files": [
+        "/Home Mx.md",
+        "/Travel checklist.md",
+        "/Personal.md",
+        "/my GERD and SIBO Mx.md",
+        "/Physical illness Mx.md",
+        "/Mx My Anxiety.md",
+        "/My Migraine Mx.md",
+        "/My clothing.md",
+        "/My Grooming.md",
+        "/Weight and sugar management.md",
+        "/ear wax mx.md",
+        "/Caffeina Mx.md",
+        "/Gym and fitness Mx.md",
+        "/My Sleep Mx.md",
+        "/My Anger Mx.md",
+        "/My Dating.md",
+        "/My Health.md",
+        "/Mental health Mx.md",
+        "/My travel.md",
+        "/Plan strength training.md",
+        "/My entertainment.md",
+        "/My gaming.md"
+      ]
+    },
+    {
+      "name": "Dogs",
+      "files": [
+        "/Dog Parenting.md",
+        "/Zoey allergy Mx.md",
+        "/Zoey cracker thunder and separation anxiety Mx.md",
+        "/Zoey gastritis episodes.md",
+        "/fomo groin fungal infection.md",
+        "/Tick Infestation Mx.md",
+        "/Dog Grooming.md",
+        "/dog sitting.md",
+        "/Dog vaccination.md",
+        "/Dog walking.md",
+        "/fomo nail clipping.md",
+        "/Fomo Deshedding.md",
+        "/Zoey Nail clipping.md"
+      ]
+    },
+    {
+      "name": "PS",
+      "files": [
+        "/PsychSom.md",
+        "/Somi anusha Rship fallout and processing.md",
+        "/Somi PMDD Mx.md",
+        "/Divorcing Graham.md",
+        "/Somi family problems.md",
+        "/Somi ADHD Mx.md",
+        "/Somi AUD Mx.md",
+        "/Somi low appetite and food aversion.md",
+        "/Somi Migraine Mx.md",
+        "/Somi NA Mx.md",
+        "/Somi period Mx.md",
+        "/Somi sleep Mx.md",
+        "/Somi therapy work.md"
+      ]
+    },
+    {
+      "name": "Azaadi",
+      "files": [
+        "/Azaadi.md",
+        "/Allyn Mx.md",
+        "/POSH vertical.md",
+        "/Topmate POSH partnership.md",
+        "/Azaadi collaborations.md",
+        "/Azaadi research.md",
+        "/Azaadi social work.md",
+        "/Azaadi store.md",
+        "/Sexism in Indian Politics project.md",
+        "/Geetu case.md"
+      ]
+    },
+    {
+      "name": "Finance",
+      "files": [
+        "/Finances.md",
+        "/Slice Bank.md",
+        "/2026 budget.md",
+        "/2026-07 budget.md",
+        "/HDFC bank account.md"
+      ]
+    }
+  ]
+}

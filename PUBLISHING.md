@@ -1,23 +1,23 @@
 # Publishing checklist
 
-Everything file-level is done: `manifest.json`, `main.js`, `styles.css`, `README.md`, `LICENSE`, `versions.json`, and a release workflow at `.github/workflows/release.yml` that automates step 3 below. What's left are actions on GitHub itself, which only you can do (they require your account).
+Everything file-level is done: `manifest.json`, `main.js`, `styles.css`, `README.md`, `LICENSE`, `versions.json`, and a release workflow at `.github/workflows/release.yml` that automates step 2 below. What's left are actions on GitHub itself, which only you can do (they require your account).
 
-## Before anything else
+## If you've already submitted 1.0.0 to obsidian-releases
 
-Everything is filled in now — `manifest.json` (`author: "Sharfaroz"`, `authorUrl: "https://github.com/sharfaroz"`) and `LICENSE` match the convention from your `wikilinkcopy` plugin. Double-check one thing: `wikilinkcopy`'s `authorUrl` points to `github.com/sharfaroz`, but the repo itself lives under `github.com/sharfaroz7` — if that's intentional (a separate primary profile), no action needed; if it was a typo carried over, let me know and I'll fix both.
+**Releasing a new version (like 1.1.0) does not need a new pull request.** Once a plugin is listed in `community-plugins.json`, Obsidian's in-app updater checks your repo's releases for a newer version than what's installed and offers the update automatically — it re-reads `manifest.json` from your latest release each time. You only need to redo the fork/PR/`community-plugins.json` step if the plugin's `id`, `name`, or `repo` location changes. For a routine version bump, just do step 2 below (tag + release) and you're done.
 
 ## Steps
 
-1. **Create a public GitHub repository** and push these files to its root (not a subfolder) — `main.js`, `manifest.json`, `styles.css`, `README.md`, `LICENSE`, `versions.json`, `.github/workflows/release.yml`.
+1. **Create a public GitHub repository** and push these files to its root (not a subfolder) — `main.js`, `manifest.json`, `styles.css`, `README.md`, `LICENSE`, `versions.json`, `.github/workflows/release.yml`. (Skip this if the repo already exists — just push the updated files to `main`.)
 
 2. **Tag a release matching `manifest.json`'s version:**
    ```
-   git tag 1.0.0
-   git push origin 1.0.0
+   git tag 1.1.0
+   git push origin 1.1.0
    ```
-   With the workflow in place, this alone creates the GitHub Release with the three required files attached as individual assets. (If you'd rather not use the workflow, you can instead go to GitHub → Releases → "Draft a new release," use `1.0.0` as the tag with no `v` prefix, and manually attach `main.js`, `manifest.json`, and `styles.css` as binary attachments.)
+   With the workflow in place, this alone creates the GitHub Release with the three required files attached as individual assets. (If you'd rather not use the workflow, you can instead go to GitHub → Releases → "Draft a new release," use `1.1.0` as the tag with no `v` prefix, and manually attach `main.js`, `manifest.json`, and `styles.css` as binary attachments.)
 
-3. **Fork [obsidianmd/obsidian-releases](https://github.com/obsidianmd/obsidian-releases)** and add an entry to the end of `community-plugins.json`:
+3. **Only for the very first submission** — fork [obsidianmd/obsidian-releases](https://github.com/obsidianmd/obsidian-releases) and add an entry to the end of `community-plugins.json`:
    ```json
    {
    	"id": "themed-journal-capture",
@@ -29,7 +29,7 @@ Everything is filled in now — `manifest.json` (`author: "Sharfaroz"`, `authorU
    ```
    (Don't forget a trailing comma after the previous entry in the file. Adjust the `repo` value if you end up naming the GitHub repository something other than `themed-journal-capture`.)
 
-4. **Open a pull request** to `obsidianmd/obsidian-releases`. GitHub will load a PR template with a checklist — check off each item honestly (tested platforms, README completeness, developer policies read, license present, etc.). An automated bot validates the submission within a few minutes and comments with any issues to fix.
+4. **Only for the very first submission** — open a pull request to `obsidianmd/obsidian-releases`. GitHub will load a PR template with a checklist — check off each item honestly (tested platforms, README completeness, developer policies read, license present, etc.). An automated bot validates the submission within a few minutes and comments with any issues to fix.
 
 5. Once the bot's checks pass, it's queued for human review. Only an Obsidian team member can merge it, so timing varies.
 

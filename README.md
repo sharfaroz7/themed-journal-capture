@@ -22,7 +22,7 @@ No build step needed — it's plain JS, ready to run as-is.
    - **↑ (Up arrow)** (or tap **"Categories…"**, shown once you've configured at least one) → opens your configured categories. From there:
      - **↑ / ↓** move between categories (or files, once inside one).
      - **→** opens the highlighted category, or selects the highlighted file (same result as picking it via Tab).
-     - **←** goes back a level — from a file list to the category list, or from the category list back to writing.
+     - **←**, or tap the **"← Back"** button, goes back a level — from a file list to the category list, or from the category list back to writing. The tap button exists because most mobile on-screen keyboards don't have a left arrow key.
      - **Tab** and **Enter** still work as fallbacks from anywhere in the category browser, so if the note you want isn't listed in any category, you're never stuck — you can drop straight into the full vault search or the inbox.
    - **Shift+Enter** → inserts a normal newline, so multi-line entries work fine (continuation lines are indented so they stay part of the same bullet).
    - **Escape** or the modal's **✕** close button → discards the entry. Nothing is written anywhere.
@@ -43,3 +43,8 @@ right below the configured heading. If the heading doesn't exist yet in the targ
 - **Categories** — optional. Each category has a name and a list of vault file paths (one per line). Browsable from the capture window via ↑ → ←. Add/remove categories with the buttons in this settings tab; files listed under a category are created automatically (like the inbox note) if they don't already exist.
 
 Note: when at least one category is configured, the Up arrow in the capture window is repurposed to open the category browser instead of moving the text caret up a line. If you don't use categories, leave the list empty and Up arrow behaves as normal caret movement.
+
+## Changelog
+
+- **1.1.0** — Added a tappable "← Back" button to the category and file browser screens, so going back a level doesn't require a physical left-arrow key on mobile.
+- **1.0.0** — Initial release.
