@@ -10,7 +10,7 @@ A frictionless quick-capture modal for Obsidian. Trigger it with a hotkey from a
    - **Tab** (or tap **"Choose note…"**) → opens a fuzzy search over every markdown file in the vault. Pick one, and the entry is filed there.
    - **Enter** (or tap **"Send to inbox"**) → the entry goes straight to your configured inbox note.
    - **↑ (Up arrow)** (or tap **"Categories…"**, shown once you've configured at least one) → opens your configured categories. From there:
-     - **↑ / ↓** move between categories (or files, once inside one).
+     - **↑ / ↓** move between categories (or between files, once you are inside a specific category).
      - **→** opens the highlighted category, or selects the highlighted file (same result as picking it via Tab).
      - **←**, or tap the **"← Back"** button, goes back a level — from a file list to the category list, or from the category list back to writing. The tap button exists because most mobile on-screen keyboards don't have a left arrow key.
      - **Tab** and **Enter** still work as fallbacks from anywhere in the category browser, so if the note you want isn't listed in any category, you're never stuck — you can drop straight into the full vault search or the inbox.
