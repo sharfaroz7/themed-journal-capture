@@ -6,9 +6,9 @@ A frictionless quick-capture modal for Obsidian. Trigger it with a hotkey from a
 
 1. Trigger your hotkey → an empty capture window opens with room for several sentences.
 2. Write your entry.
-3. Decide where it goes:
+3. Decide where it goes. Press:
    - **Tab** (or tap **"Choose note…"**) → opens a fuzzy search over every markdown file in the vault. Pick one, and the entry is filed there.
-   - **Enter without Shift** (or tap **"Send to inbox"**) → the entry goes straight to your configured inbox note.
+   - **Enter** (or tap **"Send to inbox"**) → the entry goes straight to your configured inbox note.
    - **↑ (Up arrow)** (or tap **"Categories…"**, shown once you've configured at least one) → opens your configured categories. From there:
      - **↑ / ↓** move between categories (or files, once inside one).
      - **→** opens the highlighted category, or selects the highlighted file (same result as picking it via Tab).
