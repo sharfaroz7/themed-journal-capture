@@ -22,13 +22,16 @@
  * directly by Obsidian.
  */
 
-const { Plugin, Modal, FuzzySuggestModal, PluginSettingTab, Setting, Notice, TFile, normalizePath } = require("obsidian");
+const { Plugin, Modal, FuzzySuggestModal, PluginSettingTab, Setting, Notice, TFile, normalizePath, getAllTags } = require("obsidian");
 
 const DEFAULT_SETTINGS = {
 	heading: "## Journal",
 	dateFormat: "date", // "none" | "date" | "datetime"
+	useBullet: true,
 	inboxPath: "Inbox.md",
-	categories: [], // [{ name: string, files: string[] }]
+	// Each category: { name, sourceType, files, folderPath, tag, propertyKey, propertyValue }
+	// sourceType is one of "files" | "folder" | "tag" | "property" | "bookmarks".
+	categories: [],
 };
 
 function pad(n) {
@@ -214,9 +217,11 @@ class CaptureModal extends Modal {
 		const categories = this.plugin.settings.categories;
 		if (!categories.length) return;
 		this.activeCategoryIndex = this.highlightIndex;
+		const cat = categories[this.activeCategoryIndex];
 		this.mode = "files";
 		this.highlightIndex = 0;
-		this.renderFileList(categories[this.activeCategoryIndex]);
+		this._currentCategoryFiles = this.plugin.getCategoryFilePaths(cat);
+		this.renderFileList(cat, this._currentCategoryFiles);
 		this.browseContainer.focus();
 	}
 
@@ -245,7 +250,7 @@ class CaptureModal extends Modal {
 		this.updateHighlightClasses();
 	}
 
-	renderFileList(cat) {
+	renderFileList(cat, files) {
 		this.browseContainer.empty();
 
 		const header = this.browseContainer.createDiv({ cls: "tjc-browse-header" });
@@ -254,9 +259,8 @@ class CaptureModal extends Modal {
 		backBtn.addEventListener("click", () => this.enterCategoryMode());
 		header.createEl("div", { cls: "tjc-browse-title", text: cat.name || "(untitled category)" });
 
-		const files = cat.files || [];
 		if (!files.length) {
-			this.browseContainer.createEl("div", { cls: "tjc-hint", text: "No files configured for this category yet." });
+			this.browseContainer.createEl("div", { cls: "tjc-hint", text: "No notes found for this category right now." });
 		} else {
 			const list = this.browseContainer.createDiv({ cls: "tjc-list" });
 			files.forEach((path, idx) => {
@@ -296,9 +300,9 @@ class CaptureModal extends Modal {
 
 	async selectHighlightedFile() {
 		if (this.submitted) return;
-		const cat = this.plugin.settings.categories[this.activeCategoryIndex];
-		if (!cat || !cat.files || !cat.files.length) return;
-		const path = cat.files[this.highlightIndex];
+		const files = this._currentCategoryFiles || [];
+		if (!files.length) return;
+		const path = files[this.highlightIndex];
 
 		const text = this.getTrimmedText();
 		if (!text) {
@@ -391,6 +395,16 @@ class ThemedJournalCaptureSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Bullet points")
+			.setDesc("On: each entry is inserted as a markdown bullet (\"- \"). Off: entries are inserted as plain lines with no bullet marker.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.useBullet).onChange(async (value) => {
+					this.plugin.settings.useBullet = value;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("Timestamp")
 			.setDesc("What to prepend to each bullet after the dash.")
 			.addDropdown((dropdown) =>
@@ -450,26 +464,110 @@ class ThemedJournalCaptureSettingTab extends PluginSettingTab {
 				);
 
 			new Setting(block)
-				.setName("Files")
-				.setDesc("One vault path per line, e.g. People/John.md. Created automatically if a path doesn't exist yet.")
-				.addTextArea((text) => {
-					text.setValue(cat.files.join("\n")).onChange(async (value) => {
-						cat.files = value
-							.split("\n")
-							.map((s) => s.trim())
-							.filter(Boolean);
-						await this.plugin.saveSettings();
-					});
-					text.inputEl.rows = 4;
-					text.inputEl.addClass("tjc-category-files");
+				.setName("Source")
+				.setDesc("What determines which notes show up in this category.")
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption("files", "Manual list of notes")
+						.addOption("folder", "All notes in a folder")
+						.addOption("tag", "All notes with a tag")
+						.addOption("property", "All notes with a property value")
+						.addOption("bookmarks", "All bookmarked notes")
+						.setValue(cat.sourceType)
+						.onChange(async (value) => {
+							cat.sourceType = value;
+							await this.plugin.saveSettings();
+							this.display();
+						})
+				);
+
+			if (cat.sourceType === "folder") {
+				new Setting(block)
+					.setName("Folder")
+					.setDesc("Vault path to a folder, e.g. Projects/Work. Includes notes in subfolders.")
+					.addText((text) =>
+						text
+							.setPlaceholder("Projects/Work")
+							.setValue(cat.folderPath)
+							.onChange(async (value) => {
+								cat.folderPath = value.trim();
+								await this.plugin.saveSettings();
+							})
+					);
+			} else if (cat.sourceType === "tag") {
+				new Setting(block)
+					.setName("Tag")
+					.setDesc("With or without the #, e.g. journal or #journal. Matches the tag anywhere in the note (frontmatter or inline).")
+					.addText((text) =>
+						text
+							.setPlaceholder("journal")
+							.setValue(cat.tag)
+							.onChange(async (value) => {
+								cat.tag = value.trim();
+								await this.plugin.saveSettings();
+							})
+					);
+			} else if (cat.sourceType === "property") {
+				new Setting(block)
+					.setName("Property")
+					.setDesc("The frontmatter property name, e.g. status.")
+					.addText((text) =>
+						text
+							.setPlaceholder("status")
+							.setValue(cat.propertyKey)
+							.onChange(async (value) => {
+								cat.propertyKey = value.trim();
+								await this.plugin.saveSettings();
+							})
+					);
+				new Setting(block)
+					.setName("Value")
+					.setDesc("The value that property must equal, e.g. active. Also matches if the property is a list containing this value.")
+					.addText((text) =>
+						text
+							.setPlaceholder("active")
+							.setValue(cat.propertyValue)
+							.onChange(async (value) => {
+								cat.propertyValue = value.trim();
+								await this.plugin.saveSettings();
+							})
+					);
+			} else if (cat.sourceType === "bookmarks") {
+				block.createEl("p", {
+					cls: "tjc-hint",
+					text: "Uses whatever notes are currently in Obsidian's core Bookmarks plugin (file bookmarks only — bookmarked folders, searches, etc. are ignored).",
 				});
+			} else {
+				new Setting(block)
+					.setName("Files")
+					.setDesc("One vault path per line, e.g. People/John.md. Created automatically if a path doesn't exist yet.")
+					.addTextArea((text) => {
+						text.setValue(cat.files.join("\n")).onChange(async (value) => {
+							cat.files = value
+								.split("\n")
+								.map((s) => s.trim())
+								.filter(Boolean);
+							await this.plugin.saveSettings();
+						});
+						text.inputEl.rows = 4;
+						text.inputEl.addClass("tjc-category-files");
+					});
+			}
 		});
 
 		new Setting(containerEl).addButton((btn) =>
 			btn
 				.setButtonText("+ Add category")
 				.onClick(async () => {
-					this.plugin.settings.categories.push({ name: "New category", files: [] });
+					this.plugin.settings.categories.push({
+						name: "New category",
+						sourceType: "files",
+						files: [],
+						folderPath: "",
+						tag: "",
+						propertyKey: "",
+						propertyValue: "",
+					});
 					await this.plugin.saveSettings();
 					this.display();
 				})
@@ -503,7 +601,12 @@ module.exports = class ThemedJournalCapturePlugin extends Plugin {
 		this.settings.categories = Array.isArray(this.settings.categories)
 			? this.settings.categories.map((c) => ({
 					name: (c && c.name) || "",
+					sourceType: (c && c.sourceType) || "files",
 					files: Array.isArray(c && c.files) ? c.files.slice() : [],
+					folderPath: (c && c.folderPath) || "",
+					tag: (c && c.tag) || "",
+					propertyKey: (c && c.propertyKey) || "",
+					propertyValue: (c && c.propertyValue) || "",
 			  }))
 			: [];
 	}
@@ -513,12 +616,98 @@ module.exports = class ThemedJournalCapturePlugin extends Plugin {
 	}
 
 	formatBullet(rawText) {
-		const lines = rawText.split("\n");
-		// Indent continuation lines so multi-line entries stay part of one bullet.
-		const indented = lines.map((line, idx) => (idx === 0 ? line : "  " + line)).join("\n");
-
 		const stamp = formatTimestamp(this.settings.dateFormat);
+
+		if (!this.settings.useBullet) {
+			// No bullet marker, so no need to indent continuation lines either.
+			return stamp ? `${stamp} ${rawText}` : rawText;
+		}
+
+		// Indent continuation lines so multi-line entries stay part of one bullet.
+		const indented = rawText
+			.split("\n")
+			.map((line, idx) => (idx === 0 ? line : "  " + line))
+			.join("\n");
 		return stamp ? `- ${stamp} ${indented}` : `- ${indented}`;
+	}
+
+	// Resolves a category's live list of note paths based on its source type.
+	// Computed fresh every time a category is opened, so folder/tag/property/
+	// bookmark categories always reflect the vault's current state.
+	getCategoryFilePaths(cat) {
+		const type = cat.sourceType || "files";
+		if (type === "folder") return this.getFilesInFolder(cat.folderPath);
+		if (type === "tag") return this.getFilesWithTag(cat.tag);
+		if (type === "property") return this.getFilesWithProperty(cat.propertyKey, cat.propertyValue);
+		if (type === "bookmarks") return this.getBookmarkedFiles();
+		return Array.isArray(cat.files) ? cat.files.slice() : [];
+	}
+
+	getFilesInFolder(folderPath) {
+		const normalized = normalizePath((folderPath || "").trim()).replace(/\/+$/, "");
+		if (!normalized) return [];
+		const prefix = normalized + "/";
+		return this.app.vault
+			.getMarkdownFiles()
+			.filter((f) => f.path.startsWith(prefix))
+			.map((f) => f.path)
+			.sort();
+	}
+
+	getFilesWithTag(tag) {
+		let target = (tag || "").trim();
+		if (!target) return [];
+		if (!target.startsWith("#")) target = "#" + target;
+		target = target.toLowerCase();
+
+		const results = [];
+		for (const f of this.app.vault.getMarkdownFiles()) {
+			const cache = this.app.metadataCache.getFileCache(f);
+			if (!cache) continue;
+			const tags = getAllTags(cache) || [];
+			if (tags.some((t) => t.toLowerCase() === target)) results.push(f.path);
+		}
+		return results.sort();
+	}
+
+	getFilesWithProperty(key, value) {
+		const k = (key || "").trim();
+		const v = (value || "").trim();
+		if (!k) return [];
+
+		const results = [];
+		for (const f of this.app.vault.getMarkdownFiles()) {
+			const cache = this.app.metadataCache.getFileCache(f);
+			const fm = cache && cache.frontmatter;
+			if (!fm || !(k in fm)) continue;
+			const fv = fm[k];
+			if (Array.isArray(fv)) {
+				if (fv.some((x) => String(x) === v)) results.push(f.path);
+			} else if (String(fv) === v) {
+				results.push(f.path);
+			}
+		}
+		return results.sort();
+	}
+
+	getBookmarkedFiles() {
+		const bookmarksPlugin = this.app.internalPlugins && this.app.internalPlugins.getPluginById
+			? this.app.internalPlugins.getPluginById("bookmarks")
+			: null;
+		if (!bookmarksPlugin || !bookmarksPlugin.enabled || !bookmarksPlugin.instance) return [];
+
+		const items = bookmarksPlugin.instance.items || [];
+		const results = [];
+		const walk = (list) => {
+			for (const item of list) {
+				if (item.type === "file" && item.path) results.push(item.path);
+				else if (item.type === "group" && Array.isArray(item.items)) walk(item.items);
+			}
+		};
+		walk(items);
+
+		const markdownPaths = new Set(this.app.vault.getMarkdownFiles().map((f) => f.path));
+		return Array.from(new Set(results.filter((p) => markdownPaths.has(p)))).sort();
 	}
 
 	async resolveOrCreateFile(rawPath) {
