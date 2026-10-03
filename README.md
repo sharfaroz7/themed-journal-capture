@@ -2,16 +2,6 @@
 
 A frictionless quick-capture modal for Obsidian. Trigger it with a hotkey from anywhere, write a note, and file it — as a dated bullet — into any note you choose, or straight into your inbox.
 
-## Install
-
-1. Copy `main.js`, `manifest.json`, and `styles.css` into a new folder in your vault:
-   `<vault>/.obsidian/plugins/themed-journal-capture/`
-2. Reload Obsidian (or disable/re-enable community plugins).
-3. Enable **Themed Journal Capture** under Settings → Community plugins.
-4. Go to Settings → Hotkeys, search for **"Themed Journal Capture: Open capture window"**, and bind a hotkey to it. (No default hotkey is set, so this step is required — pick whatever's easiest to hit from anywhere, e.g. on iOS/iPadOS you can trigger commands via Shortcuts or the mobile toolbar.)
-
-No build step needed — it's plain JS, ready to run as-is.
-
 ## How it works
 
 1. Trigger your hotkey → an empty capture window opens with room for several sentences.
