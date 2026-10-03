@@ -22,13 +22,24 @@
  * directly by Obsidian.
  */
 
-const { Plugin, Modal, FuzzySuggestModal, PluginSettingTab, Setting, Notice, TFile, normalizePath, getAllTags } = require("obsidian");
+const { Plugin, Modal, FuzzySuggestModal, PluginSettingTab, Setting, Notice, TFile, normalizePath, getAllTags, Platform } = require("obsidian");
 
 const DEFAULT_SETTINGS = {
 	heading: "## Journal",
 	dateFormat: "date", // "none" | "date" | "datetime"
 	useBullet: true,
+	enableInbox: true,
 	inboxPath: "Inbox.md",
+	// Only used when enableInbox is false - what plain Enter does instead.
+	disabledInboxEnterAction: "copy", // "copy" | "newline"
+	confirmBeforeDiscard: true,
+	// Optional modifier+Enter shortcuts inside the capture window.
+	recentNoteHotkey: { enabled: false, modifier: "Meta" }, // modifier: "Meta" | "Ctrl" | "Alt"
+	lastUsedNoteHotkey: { enabled: false, modifier: "Ctrl" },
+	// Internal state (not a user-facing setting): notes the plugin has
+	// actually written entries into, by any method, most recent first,
+	// capped at USED_FILE_HISTORY_LIMIT.
+	usedFileHistory: [],
 	// Each category: { name, sourceType, files, folderPath, tag, propertyKey, propertyValue }
 	// sourceType is one of "files" | "folder" | "tag" | "property" | "bookmarks".
 	categories: [],
@@ -55,14 +66,37 @@ function formatTimestamp(dateFormat) {
 	return formatDateFallback(withTime);
 }
 
+// How many entries the "recently used" history keeps.
+const USED_FILE_HISTORY_LIMIT = 25;
+
+function modifierDisplayName(mod) {
+	if (mod === "Meta") return Platform.isMacOS ? "Cmd" : "Win";
+	if (mod === "Alt") return Platform.isMacOS ? "Option" : "Alt";
+	return "Ctrl";
+}
+
+// Matches an exact single modifier - e.g. "Ctrl" only fires when Ctrl is
+// held and Meta/Alt are not, so the two configurable hotkeys (and plain
+// Enter) never accidentally overlap.
+function matchesModifier(evt, modifier) {
+	const meta = !!evt.metaKey;
+	const ctrl = !!evt.ctrlKey;
+	const alt = !!evt.altKey;
+	if (modifier === "Meta") return meta && !ctrl && !alt;
+	if (modifier === "Ctrl") return ctrl && !meta && !alt;
+	if (modifier === "Alt") return alt && !meta && !ctrl;
+	return false;
+}
+
 class CaptureModal extends Modal {
 	constructor(app, plugin) {
 		super(app);
 		this.plugin = plugin;
 		this.submitted = false;
-		this.mode = "edit"; // "edit" | "categories" | "files"
+		this.mode = "edit"; // "edit" | "categories" | "files" | "recent" | "history" | "confirm"
 		this.activeCategoryIndex = -1;
 		this.highlightIndex = 0;
+		this._confirmedDiscard = false;
 	}
 
 	onOpen() {
@@ -82,12 +116,17 @@ class CaptureModal extends Modal {
 		this.textarea.placeholder = "Write your entry…";
 
 		const hint = this.editContainer.createEl("div", { cls: "tjc-hint" });
-		hint.setText("Enter → inbox   ·   Tab → choose note   ·   ↑ → categories   ·   Shift+Enter → new line   ·   Esc → discard");
+		hint.setText(this.buildHintText());
 
 		const btnRow = this.editContainer.createDiv({ cls: "tjc-btn-row" });
 
-		const inboxBtn = btnRow.createEl("button", { text: "Send to inbox", cls: "tjc-btn tjc-btn-primary" });
-		inboxBtn.addEventListener("click", () => this.handleEnterToInbox());
+		if (this.plugin.settings.enableInbox) {
+			const inboxBtn = btnRow.createEl("button", { text: "Send to inbox", cls: "tjc-btn tjc-btn-primary" });
+			inboxBtn.addEventListener("click", () => this.handlePlainEnter());
+		} else if (this.plugin.settings.disabledInboxEnterAction === "copy") {
+			const copyBtn = btnRow.createEl("button", { text: "Copy entry", cls: "tjc-btn tjc-btn-primary" });
+			copyBtn.addEventListener("click", () => this.handlePlainEnter());
+		}
 
 		const chooseBtn = btnRow.createEl("button", { text: "Choose note…", cls: "tjc-btn" });
 		chooseBtn.addEventListener("click", () => this.handleTab());
@@ -95,6 +134,18 @@ class CaptureModal extends Modal {
 		if (this.plugin.settings.categories.length > 0) {
 			const categoriesBtn = btnRow.createEl("button", { text: "Categories…", cls: "tjc-btn" });
 			categoriesBtn.addEventListener("click", () => this.handleUpArrow());
+		}
+
+		if (this.plugin.settings.recentNoteHotkey.enabled) {
+			const recentBtn = btnRow.createEl("button", { text: "Recent notes", cls: "tjc-btn" });
+			recentBtn.setAttribute("title", `Shortcut: ${modifierDisplayName(this.plugin.settings.recentNoteHotkey.modifier)}+Enter`);
+			recentBtn.addEventListener("click", () => this.enterRecentNotesMode());
+		}
+
+		if (this.plugin.settings.lastUsedNoteHotkey.enabled) {
+			const lastUsedBtn = btnRow.createEl("button", { text: "Recently used", cls: "tjc-btn" });
+			lastUsedBtn.setAttribute("title", `Shortcut: ${modifierDisplayName(this.plugin.settings.lastUsedNoteHotkey.modifier)}+Enter`);
+			lastUsedBtn.addEventListener("click", () => this.enterHistoryMode());
 		}
 
 		// --- Browse view: category list, then file list within a category -
@@ -118,7 +169,8 @@ class CaptureModal extends Modal {
 			const vh = window.visualViewport.height;
 			this.modalEl.style.maxHeight = Math.round(vh * 0.9) + "px";
 			window.setTimeout(() => {
-				const focused = this.mode === "edit" ? this.textarea : this.browseContainer;
+				const focused =
+					this.mode === "edit" ? this.textarea : this.mode === "confirm" ? this.confirmContainer : this.browseContainer;
 				if (focused) focused.scrollIntoView({ block: "nearest" });
 			}, 30);
 		};
@@ -135,25 +187,105 @@ class CaptureModal extends Modal {
 		return (this.textarea.value || "").trim();
 	}
 
+	buildHintText() {
+		const s = this.plugin.settings;
+		const parts = [];
+
+		const enterIsNewline = !s.enableInbox && s.disabledInboxEnterAction === "newline";
+		if (s.enableInbox) parts.push("Enter → inbox");
+		else if (s.disabledInboxEnterAction === "copy") parts.push("Enter → copy entry");
+		else parts.push("Enter → new line");
+
+		parts.push("Tab → choose note");
+		if (s.categories.length > 0) parts.push("↑ → categories");
+		if (s.recentNoteHotkey.enabled) parts.push(`${modifierDisplayName(s.recentNoteHotkey.modifier)}+Enter → recent notes`);
+		if (s.lastUsedNoteHotkey.enabled) parts.push(`${modifierDisplayName(s.lastUsedNoteHotkey.modifier)}+Enter → recently used`);
+		if (!enterIsNewline) parts.push("Shift+Enter → new line");
+		parts.push("Esc → discard");
+
+		return parts.join("   ·   ");
+	}
+
 	handleKeydown(evt) {
 		if (evt.key === "Escape") {
 			evt.preventDefault();
+			// A second Escape while the confirm screen is already showing
+			// confirms the discard, instead of getting stuck doing nothing.
+			if (this.mode === "confirm") this._confirmedDiscard = true;
 			this.close();
 			return;
 		}
 
-		// Tab (full vault search) and Enter (inbox) stay available as
-		// fallbacks in every mode, including while browsing categories/files -
-		// so if the right note isn't in any category, the person can always
-		// drop straight back to the normal path without starting over.
+		// The confirm screen only responds to Escape (above) and its two buttons.
+		if (this.mode === "confirm") return;
+
+		// Both quick-jump lists ("recent" and "history") use Enter itself to
+		// confirm the highlighted pick (rather than falling back to inbox
+		// like it does elsewhere), so they're handled before the general
+		// Enter branch below.
+		if (this.mode === "recent" || this.mode === "history") {
+			if (evt.key === "ArrowDown") {
+				evt.preventDefault();
+				this.moveHighlight(1);
+				return;
+			}
+			if (evt.key === "ArrowUp") {
+				evt.preventDefault();
+				this.moveHighlight(-1);
+				return;
+			}
+			if (evt.key === "ArrowLeft") {
+				evt.preventDefault();
+				this.enterEditMode();
+				return;
+			}
+			if (evt.key === "ArrowRight" || (evt.key === "Enter" && !evt.shiftKey)) {
+				evt.preventDefault();
+				if (this.mode === "recent") this.selectHighlightedRecentNote();
+				else this.selectHighlightedHistoryNote();
+				return;
+			}
+			if (evt.key === "Tab" && !evt.shiftKey) {
+				evt.preventDefault();
+				this.handleTab();
+				return;
+			}
+			return; // ignore other keys while browsing this list
+		}
+
+		if (evt.key === "Enter" && !evt.shiftKey) {
+			const s = this.plugin.settings;
+
+			if (s.recentNoteHotkey.enabled && matchesModifier(evt, s.recentNoteHotkey.modifier)) {
+				evt.preventDefault();
+				this.enterRecentNotesMode();
+				return;
+			}
+			if (s.lastUsedNoteHotkey.enabled && matchesModifier(evt, s.lastUsedNoteHotkey.modifier)) {
+				evt.preventDefault();
+				this.enterHistoryMode();
+				return;
+			}
+
+			if (!evt.metaKey && !evt.ctrlKey && !evt.altKey) {
+				// Plain Enter, no modifiers held.
+				if (!s.enableInbox && s.disabledInboxEnterAction === "newline") {
+					return; // let the browser insert a normal line break, same as Shift+Enter
+				}
+				evt.preventDefault();
+				this.handlePlainEnter();
+				return;
+			}
+			// Some other modifier+Enter combo we don't recognize: pass through untouched.
+		}
+
+		// Tab (full vault search) stays available as a fallback in every mode,
+		// including while browsing categories/files - so if the right note
+		// isn't in any category, the person can always drop straight back to
+		// the normal path without starting over.
 		if (evt.key === "Tab" && !evt.shiftKey) {
 			evt.preventDefault();
 			this.handleTab();
-			return;
-		}
-		if (evt.key === "Enter" && !evt.shiftKey) {
-			evt.preventDefault();
-			this.handleEnterToInbox();
 			return;
 		}
 
@@ -182,6 +314,15 @@ class CaptureModal extends Modal {
 			if (this.mode === "categories") this.enterEditMode();
 			else this.enterCategoryMode();
 		}
+	}
+
+	buildBrowseFallbackHint() {
+		const s = this.plugin.settings;
+		let enterLabel;
+		if (s.enableInbox) enterLabel = "Enter inbox";
+		else if (s.disabledInboxEnterAction === "copy") enterLabel = "Enter copy entry";
+		else enterLabel = "Enter n/a here"; // "newline" fallback has nothing to do while browsing (no textarea focused)
+		return `Tab full search   ·   ${enterLabel}   ·   Esc discard`;
 	}
 
 	handleUpArrow() {
@@ -245,7 +386,7 @@ class CaptureModal extends Modal {
 
 		this.browseContainer.createEl("div", {
 			cls: "tjc-hint",
-			text: "↑↓ choose   ·   → open   ·   ← back to writing   ·   Tab full search   ·   Enter inbox   ·   Esc discard",
+			text: `↑↓ choose   ·   → open   ·   ← back to writing   ·   ${this.buildBrowseFallbackHint()}`,
 		});
 		this.updateHighlightClasses();
 	}
@@ -274,7 +415,7 @@ class CaptureModal extends Modal {
 
 		this.browseContainer.createEl("div", {
 			cls: "tjc-hint",
-			text: "↑↓ choose   ·   → select   ·   ← back to categories   ·   Tab full search   ·   Enter inbox   ·   Esc discard",
+			text: `↑↓ choose   ·   → select   ·   ← back to categories   ·   ${this.buildBrowseFallbackHint()}`,
 		});
 		this.updateHighlightClasses();
 	}
@@ -328,16 +469,234 @@ class CaptureModal extends Modal {
 		new FileSearchModal(this.app, this.plugin, text).open();
 	}
 
-	async handleEnterToInbox() {
+	// Plain Enter (no modifiers). Only ever called when there's actually
+	// something for it to do - see handleKeydown, which lets Enter pass
+	// through untouched when inbox is off and the fallback is "newline".
+	async handlePlainEnter() {
 		if (this.submitted) return;
 		const text = this.getTrimmedText();
 		if (!text) {
 			new Notice("Nothing to capture yet.");
 			return;
 		}
+
+		if (this.plugin.settings.enableInbox) {
+			this.submitted = true;
+			this.close();
+			await this.plugin.captureToInbox(text);
+			return;
+		}
+
+		// Inbox is off and the configured fallback is "copy".
+		await this.copyEntryToClipboard();
 		this.submitted = true;
 		this.close();
-		await this.plugin.captureToInbox(text);
+	}
+
+	// How many recently created-or-updated notes to list. This is a quick
+	// jump list, not a search - the full vault stays reachable via Tab.
+	static get RECENT_NOTES_LIMIT() {
+		return 25;
+	}
+
+	enterRecentNotesMode() {
+		if (this.submitted) return;
+		if (!this.getTrimmedText()) {
+			new Notice("Nothing to capture yet.");
+			return;
+		}
+
+		const files = this.app.vault.getMarkdownFiles();
+		if (!files.length) {
+			new Notice("No notes found in the vault.");
+			return;
+		}
+
+		// Ranked by whichever is more recent, creation or last edit, so a
+		// note that was just edited surfaces just as readily as a brand
+		// new one.
+		this._recentNotesList = files
+			.slice()
+			.sort((a, b) => {
+				const aTime = Math.max((a.stat && a.stat.ctime) || 0, (a.stat && a.stat.mtime) || 0);
+				const bTime = Math.max((b.stat && b.stat.ctime) || 0, (b.stat && b.stat.mtime) || 0);
+				return bTime - aTime;
+			})
+			.slice(0, CaptureModal.RECENT_NOTES_LIMIT);
+
+		this.mode = "recent";
+		this.highlightIndex = 0;
+		this.editContainer.style.display = "none";
+		this.browseContainer.style.display = "";
+		this.renderRecentNotesList();
+		this.browseContainer.focus();
+	}
+
+	renderRecentNotesList() {
+		this.browseContainer.empty();
+
+		const header = this.browseContainer.createDiv({ cls: "tjc-browse-header" });
+		const backBtn = header.createEl("button", { cls: "tjc-btn tjc-back-btn", text: "← Back" });
+		backBtn.setAttribute("aria-label", "Back to writing");
+		backBtn.addEventListener("click", () => this.enterEditMode());
+		header.createEl("div", { cls: "tjc-browse-title", text: "Recent notes" });
+
+		const list = this.browseContainer.createDiv({ cls: "tjc-list" });
+		this._recentNotesList.forEach((file, idx) => {
+			const item = list.createDiv({ cls: "tjc-list-item", text: file.path });
+			item.addEventListener("click", () => {
+				this.highlightIndex = idx;
+				this.selectHighlightedRecentNote();
+			});
+		});
+
+		this.browseContainer.createEl("div", {
+			cls: "tjc-hint",
+			text: `↑↓ choose   ·   Enter/→ select   ·   ← back to writing   ·   ${this.buildBrowseFallbackHint()}`,
+		});
+		this.updateHighlightClasses();
+	}
+
+	async selectHighlightedRecentNote() {
+		if (this.submitted) return;
+		const files = this._recentNotesList || [];
+		if (!files.length) return;
+		const file = files[this.highlightIndex];
+
+		const text = this.getTrimmedText();
+		if (!text) {
+			new Notice("Nothing to capture yet.");
+			this.enterEditMode();
+			return;
+		}
+
+		this.submitted = true;
+		this.close();
+		await this.plugin.captureToFile(file, text);
+	}
+
+	enterHistoryMode() {
+		if (this.submitted) return;
+		if (!this.getTrimmedText()) {
+			new Notice("Nothing to capture yet.");
+			return;
+		}
+
+		const history = this.plugin.settings.usedFileHistory || [];
+		if (!history.length) {
+			new Notice("No previously used notes yet.");
+			return;
+		}
+
+		this._historyList = history.slice();
+		this.mode = "history";
+		this.highlightIndex = 0;
+		this.editContainer.style.display = "none";
+		this.browseContainer.style.display = "";
+		this.renderHistoryList();
+		this.browseContainer.focus();
+	}
+
+	renderHistoryList() {
+		this.browseContainer.empty();
+
+		const header = this.browseContainer.createDiv({ cls: "tjc-browse-header" });
+		const backBtn = header.createEl("button", { cls: "tjc-btn tjc-back-btn", text: "← Back" });
+		backBtn.setAttribute("aria-label", "Back to writing");
+		backBtn.addEventListener("click", () => this.enterEditMode());
+		header.createEl("div", { cls: "tjc-browse-title", text: "Recently used notes" });
+
+		const list = this.browseContainer.createDiv({ cls: "tjc-list" });
+		this._historyList.forEach((path, idx) => {
+			const item = list.createDiv({ cls: "tjc-list-item", text: path });
+			item.addEventListener("click", () => {
+				this.highlightIndex = idx;
+				this.selectHighlightedHistoryNote();
+			});
+		});
+
+		this.browseContainer.createEl("div", {
+			cls: "tjc-hint",
+			text: `↑↓ choose   ·   Enter/→ select   ·   ← back to writing   ·   ${this.buildBrowseFallbackHint()}`,
+		});
+		this.updateHighlightClasses();
+	}
+
+	async selectHighlightedHistoryNote() {
+		if (this.submitted) return;
+		const history = this._historyList || [];
+		if (!history.length) return;
+		const path = history[this.highlightIndex];
+
+		const text = this.getTrimmedText();
+		if (!text) {
+			new Notice("Nothing to capture yet.");
+			this.enterEditMode();
+			return;
+		}
+
+		this.submitted = true;
+		this.close();
+		await this.plugin.captureToPath(path, text);
+	}
+
+	async copyEntryToClipboard() {
+		const text = this.getTrimmedText();
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			new Notice("Entry copied to clipboard.");
+		} catch (e) {
+			console.error("Themed Journal Capture: failed to copy to clipboard", e);
+			new Notice("Themed Journal Capture: couldn't copy to clipboard.");
+		}
+	}
+
+	// Overrides Modal.close(). Every path that closes this modal - Escape,
+	// the built-in ✕ button, clicking outside, or our own code - calls
+	// this.close(), so intercepting it here covers all of them uniformly.
+	// A successful capture always sets this.submitted before calling
+	// close(), so it's never held up by the confirmation screen.
+	close() {
+		const hasUnsavedText = this.textarea && this.getTrimmedText().length > 0;
+		if (!this.submitted && this.plugin.settings.confirmBeforeDiscard && !this._confirmedDiscard && hasUnsavedText) {
+			if (this.mode !== "confirm") this.showConfirmScreen();
+			return;
+		}
+		super.close();
+	}
+
+	showConfirmScreen() {
+		this.mode = "confirm";
+		this.editContainer.style.display = "none";
+		this.browseContainer.style.display = "none";
+
+		if (!this.confirmContainer) {
+			this.confirmContainer = this.contentEl.createDiv({ cls: "tjc-confirm-container" });
+			this.confirmContainer.setAttribute("tabindex", "-1");
+		}
+		this.confirmContainer.empty();
+		this.confirmContainer.style.display = "";
+
+		this.confirmContainer.createEl("div", { cls: "tjc-browse-title", text: "Discard this entry?" });
+		this.confirmContainer.createEl("div", { cls: "tjc-hint", text: "It hasn't been saved anywhere yet." });
+
+		const btnRow = this.confirmContainer.createDiv({ cls: "tjc-btn-row" });
+
+		const yesCancelBtn = btnRow.createEl("button", { text: "Yes, cancel", cls: "tjc-btn" });
+		yesCancelBtn.addEventListener("click", () => {
+			this._confirmedDiscard = true;
+			this.close();
+		});
+
+		const copyBtn = btnRow.createEl("button", { text: "Copy entry to clipboard", cls: "tjc-btn tjc-btn-primary" });
+		copyBtn.addEventListener("click", async () => {
+			await this.copyEntryToClipboard();
+			this._confirmedDiscard = true;
+			this.close();
+		});
+
+		this.confirmContainer.focus();
 	}
 
 	onClose() {
@@ -421,15 +780,52 @@ class ThemedJournalCaptureSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Inbox note")
-			.setDesc("Path to the note used when you press Enter instead of Tab. Created automatically if it doesn't exist.")
-			.addText((text) =>
-				text
-					.setPlaceholder("Inbox.md")
-					.setValue(this.plugin.settings.inboxPath)
-					.onChange(async (value) => {
-						this.plugin.settings.inboxPath = value.trim() || DEFAULT_SETTINGS.inboxPath;
-						await this.plugin.saveSettings();
-					})
+			.setDesc("Lets Enter route entries to an inbox note. Turn off if you don't use one - the \"Send to inbox\" button disappears and you choose what plain Enter does instead.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.enableInbox).onChange(async (value) => {
+					this.plugin.settings.enableInbox = value;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			);
+
+		if (this.plugin.settings.enableInbox) {
+			new Setting(containerEl)
+				.setName("Inbox note path")
+				.setDesc("Path used when you press Enter. Created automatically, including any missing parent folders, if it doesn't exist.")
+				.addText((text) =>
+					text
+						.setPlaceholder("Inbox.md")
+						.setValue(this.plugin.settings.inboxPath)
+						.onChange(async (value) => {
+							this.plugin.settings.inboxPath = value.trim() || DEFAULT_SETTINGS.inboxPath;
+							await this.plugin.saveSettings();
+						})
+				);
+		} else {
+			new Setting(containerEl)
+				.setName("When inbox is off, Enter should")
+				.setDesc("There's no inbox to send to, so pick what plain Enter does instead.")
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption("copy", "Copy the entry to the clipboard")
+						.addOption("newline", "Just insert a line break (default textarea behavior)")
+						.setValue(this.plugin.settings.disabledInboxEnterAction)
+						.onChange(async (value) => {
+							this.plugin.settings.disabledInboxEnterAction = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Confirm before discarding")
+			.setDesc("Ask before abandoning an entry (Escape, the ✕ button, or clicking outside), with an option to copy it to the clipboard first instead of losing it.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.confirmBeforeDiscard).onChange(async (value) => {
+					this.plugin.settings.confirmBeforeDiscard = value;
+					await this.plugin.saveSettings();
+				})
 			);
 
 		containerEl.createEl("h3", { text: "Categories" });
@@ -573,6 +969,81 @@ class ThemedJournalCaptureSettingTab extends PluginSettingTab {
 				})
 		);
 
+		containerEl.createEl("h3", { text: "Quick-jump hotkeys" });
+		containerEl.createEl("p", {
+			cls: "tjc-hint",
+			text: "Optional. Each adds a modifier+Enter shortcut inside the capture window (plus a tap button on mobile), opening a short ranked list to pick from - one ranked by when notes were created or edited, the other by when you last used them with this plugin.",
+		});
+
+		new Setting(containerEl)
+			.setName("Recent notes list")
+			.setDesc(
+				`Opens a list of your ${CaptureModal.RECENT_NOTES_LIMIT} most recently created or updated notes, newest first. Navigate with ↑/↓, confirm with Enter or →.`
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.recentNoteHotkey.enabled).onChange(async (value) => {
+					this.plugin.settings.recentNoteHotkey.enabled = value;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			);
+
+		if (this.plugin.settings.recentNoteHotkey.enabled) {
+			new Setting(containerEl).setName("Modifier").addDropdown((dropdown) =>
+				dropdown
+					.addOption("Meta", modifierDisplayName("Meta"))
+					.addOption("Ctrl", modifierDisplayName("Ctrl"))
+					.addOption("Alt", modifierDisplayName("Alt"))
+					.setValue(this.plugin.settings.recentNoteHotkey.modifier)
+					.onChange(async (value) => {
+						this.plugin.settings.recentNoteHotkey.modifier = value;
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			);
+		}
+
+		new Setting(containerEl)
+			.setName("Recently used notes list")
+			.setDesc(
+				`Opens a list of up to ${USED_FILE_HISTORY_LIMIT} notes this plugin has filed entries into, most recently used first. Using a note again moves it back to the top.`
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.lastUsedNoteHotkey.enabled).onChange(async (value) => {
+					this.plugin.settings.lastUsedNoteHotkey.enabled = value;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			);
+
+		if (this.plugin.settings.lastUsedNoteHotkey.enabled) {
+			new Setting(containerEl).setName("Modifier").addDropdown((dropdown) =>
+				dropdown
+					.addOption("Meta", modifierDisplayName("Meta"))
+					.addOption("Ctrl", modifierDisplayName("Ctrl"))
+					.addOption("Alt", modifierDisplayName("Alt"))
+					.setValue(this.plugin.settings.lastUsedNoteHotkey.modifier)
+					.onChange(async (value) => {
+						this.plugin.settings.lastUsedNoteHotkey.modifier = value;
+						await this.plugin.saveSettings();
+						this.display();
+					})
+			);
+		}
+
+		if (
+			this.plugin.settings.recentNoteHotkey.enabled &&
+			this.plugin.settings.lastUsedNoteHotkey.enabled &&
+			this.plugin.settings.recentNoteHotkey.modifier === this.plugin.settings.lastUsedNoteHotkey.modifier
+		) {
+			containerEl.createEl("p", {
+				cls: "tjc-hint",
+				text: `Both are set to ${modifierDisplayName(
+					this.plugin.settings.recentNoteHotkey.modifier
+				)}+Enter - the recent-notes list will take priority over the keyboard shortcut, and the recently-used list will only be reachable by its tap button until you pick a different modifier for one of them.`,
+			});
+		}
+
 		containerEl.createEl("p", {
 			cls: "tjc-hint",
 			text: "Tip: bind a hotkey to \"Themed Journal Capture: Open capture window\" in Settings → Hotkeys.",
@@ -609,6 +1080,18 @@ module.exports = class ThemedJournalCapturePlugin extends Plugin {
 					propertyValue: (c && c.propertyValue) || "",
 			  }))
 			: [];
+		this.settings.recentNoteHotkey = Object.assign({ enabled: false, modifier: "Meta" }, this.settings.recentNoteHotkey || {});
+		this.settings.lastUsedNoteHotkey = Object.assign({ enabled: false, modifier: "Ctrl" }, this.settings.lastUsedNoteHotkey || {});
+
+		if (Array.isArray(this.settings.usedFileHistory)) {
+			this.settings.usedFileHistory = this.settings.usedFileHistory.slice(0, USED_FILE_HISTORY_LIMIT);
+		} else if (typeof loaded.lastUsedFilePath === "string" && loaded.lastUsedFilePath) {
+			// Migrating from the pre-history single-path version of this setting.
+			this.settings.usedFileHistory = [loaded.lastUsedFilePath];
+		} else {
+			this.settings.usedFileHistory = [];
+		}
+		delete this.settings.lastUsedFilePath;
 	}
 
 	async saveSettings() {
@@ -763,9 +1246,20 @@ module.exports = class ThemedJournalCapturePlugin extends Plugin {
 		await this.app.vault.modify(file, newLines.join("\n"));
 	}
 
+	// Moves path to the front of usedFileHistory (removing any earlier
+	// occurrence first, so re-using a note bumps it back to the top
+	// instead of appearing twice), capped at USED_FILE_HISTORY_LIMIT.
+	recordUsedFile(path) {
+		const history = (this.settings.usedFileHistory || []).filter((p) => p !== path);
+		history.unshift(path);
+		this.settings.usedFileHistory = history.slice(0, USED_FILE_HISTORY_LIMIT);
+	}
+
 	async captureToFile(file, rawText) {
 		try {
 			await this.insertUnderHeading(file, rawText);
+			this.recordUsedFile(file.path);
+			await this.saveSettings();
 			new Notice(`Captured to "${file.basename}".`);
 		} catch (e) {
 			console.error("Themed Journal Capture: failed to write entry", e);
