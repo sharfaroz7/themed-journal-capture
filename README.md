@@ -68,7 +68,7 @@ Either way, the entry is inserted as:
 
 ## Changelog
 
-- **1.3.0** — Inbox note can now be turned off entirely (with a choice of what Enter does instead: copy to clipboard, or a plain line break). Added two optional quick-jump hotkeys, each opening a ranked list to pick from: one by when notes were created/edited, the other by when you last used them with this plugin. Added an optional confirmation screen before discarding an entry, with a "copy to clipboard" escape hatch.
+- **1.3.0** — Inbox note can now be turned off entirely (with a choice of what Enter does instead: copy to clipboard, or a plain line break). Added two optional quick-jump hotkeys, each opening a ranked list to pick from: one by when notes were created/edited, the other by when you last used them with this plugin. Added an optional confirmation screen before discarding an entry (when you click outside the journal capture window), with a "copy to clipboard" escape hatch.
 - **1.2.0** — Added a toggle to turn bullet points off entirely. Categories can now pull their notes live from a folder, a tag, a frontmatter property value, or Obsidian's Bookmarks, instead of only a manually typed list.
 - **1.1.0** — Added a tappable "← Back" button to the category and file browser screens, so going back a level doesn't require a physical left-arrow key on mobile.
 - **1.0.0** — Initial release.
